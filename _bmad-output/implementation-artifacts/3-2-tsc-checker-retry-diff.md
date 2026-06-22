@@ -1,6 +1,6 @@
 # Story 3.2: TypeScript Checker, Retry & Diff Generator
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,27 +20,27 @@ so that users only receive verified, compilable refactoring suggestions.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: TypeScript Checker
-  - [ ] Chạy tsc --noEmit trên sandbox (hoặc ts-morph diagnostics)
-  - [ ] Parse errors → { file, line, message }
-  - [ ] Handle: no tsconfig → create minimal temp config
+- [x] Task 1: TypeScript Checker
+  - [x] Chạy tsc --noEmit trên sandbox (hoặc ts-morph diagnostics)
+  - [x] Parse errors → { file, line, message }
+  - [x] Handle: no tsconfig → create minimal temp config
 
-- [ ] Task 2: Retry logic
-  - [ ] If compile fail: append error to prompt, re-call Claude
-  - [ ] Re-apply revised actions → re-check
-  - [ ] Max 2 retries (3 total attempts)
-  - [ ] If all fail: graceful degradation (return findings without diff)
+- [x] Task 2: Retry logic
+  - [x] If compile fail: append error to prompt, re-call Claude
+  - [x] Re-apply revised actions → re-check
+  - [x] Max 2 retries (3 total attempts)
+  - [x] If all fail: graceful degradation (return findings without diff)
 
-- [ ] Task 3: Diff Generator
-  - [ ] Compare sandbox vs original directory
-  - [ ] Generate unified diff per changed/new file
-  - [ ] Dùng `diff` npm package hoặc custom implementation
+- [x] Task 3: Diff Generator
+  - [x] Compare sandbox vs original directory
+  - [x] Generate unified diff per changed/new file
+  - [x] Dùng `diff` npm package hoặc custom implementation
 
-- [ ] Task 4: Unit tests
-  - [ ] Test: compile pass first try → no retry
-  - [ ] Test: fail then pass → 1 retry
-  - [ ] Test: fail all → graceful error
-  - [ ] Test: diff output format correct
+- [x] Task 4: Unit tests
+  - [x] Test: compile pass first try → no retry
+  - [x] Test: fail then pass → 1 retry
+  - [x] Test: fail all → graceful error
+  - [x] Test: diff output format correct
 
 ## Dev Notes
 
@@ -53,3 +53,28 @@ so that users only receive verified, compilable refactoring suggestions.
 
 - [Source: docs/system-architecture.md#11.6. Retry logic]
 - [Source: docs/example-god-class-walkthrough.md#Bước 6 — Fix Validator]
+
+## Dev Agent Record
+
+### Implementation Notes
+- TypeScript checker uses ts-morph getPreEmitDiagnostics (in-process, no CLI spawn)
+- Retry pipeline: max 2 retries (3 total), appends errors to prompt for Claude revision
+- Diff generator uses `diff` npm package createTwoFilesPatch for unified format
+- Graceful degradation: returns findings without diff if all attempts fail
+
+### Tests Created
+- `tests/checker/typescript-checker.test.ts` — 2 tests
+- `tests/llm/retry-pipeline.test.ts` — 3 tests
+- `tests/diff/diff-generator.test.ts` — 4 tests
+
+### File List
+- `src/checker/typescript-checker.ts`
+- `src/llm/retry-pipeline.ts`
+- `src/diff/diff-generator.ts`
+- `tests/checker/typescript-checker.test.ts`
+- `tests/llm/retry-pipeline.test.ts`
+- `tests/diff/diff-generator.test.ts`
+- `vitest.config.ts` (modified — increased testTimeout to 30s)
+
+### Change Log
+- 2026-06-22: Story 3-2 implemented — TypeScript checker, retry pipeline, diff generator, all tests passing (61/61)
