@@ -32,7 +32,9 @@ describe('Pipeline Orchestrator', () => {
   });
 
   it('throws MissingApiKeyError when not dry-run and no key', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY;
+    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
 
     try {
@@ -44,7 +46,8 @@ describe('Pipeline Orchestrator', () => {
         })
       ).rejects.toThrow(MissingApiKeyError);
     } finally {
-      if (originalKey) process.env.ANTHROPIC_API_KEY = originalKey;
+      if (originalKey) process.env.OPENROUTER_API_KEY = originalKey;
+      if (originalAnthropicKey) process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
     }
   });
 

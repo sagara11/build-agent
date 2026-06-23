@@ -2,42 +2,43 @@ import { describe, it, expect, vi } from 'vitest';
 import { ClaudeClient } from '../../src/llm/claude-client.js';
 
 describe('ClaudeClient', () => {
-  it('sends correct request params to SDK', async () => {
+  it('sends correct request params to OpenRouter', async () => {
     const mockCreate = vi.fn().mockResolvedValue({
-      content: [
-        {
-          type: 'tool_use',
-          id: 'test-id',
-          name: 'apply_ast_changes',
-          input: {
-            reasoning: 'Extract notification methods to separate service',
-            actions: [
-              {
-                action: 'extract_class',
-                sourceFile: 'UserService.ts',
-                className: 'UserService',
-                methodNames: ['sendNotification', 'bulkNotify'],
-                newFileName: 'NotificationService.ts',
-                newClassName: 'NotificationService',
-              },
-            ],
-          },
+      choices: [{
+        message: {
+          tool_calls: [{
+            id: 'call-1',
+            type: 'function',
+            function: {
+              name: 'apply_ast_changes',
+              arguments: JSON.stringify({
+                reasoning: 'Extract notification methods to separate service',
+                actions: [{
+                  action: 'extract_class',
+                  sourceFile: 'UserService.ts',
+                  className: 'UserService',
+                  methodNames: ['sendNotification', 'bulkNotify'],
+                  newFileName: 'NotificationService.ts',
+                  newClassName: 'NotificationService',
+                }],
+              }),
+            },
+          }],
         },
-      ],
+      }],
     });
 
-    const mockClient = { messages: { create: mockCreate } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockOpenAI = { chat: { completions: { create: mockCreate } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
 
     const result = await client.analyzeIssue('test prompt');
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'claude-sonnet-4-5-20250514',
         max_tokens: 4096,
-        tool_choice: { type: 'any' },
+        tool_choice: { type: 'function', function: { name: 'apply_ast_changes' } },
         tools: expect.arrayContaining([
-          expect.objectContaining({ name: 'apply_ast_changes' }),
+          expect.objectContaining({ type: 'function' }),
         ]),
         messages: [{ role: 'user', content: 'test prompt' }],
       })
@@ -48,23 +49,23 @@ describe('ClaudeClient', () => {
     expect(result.reasoning).toContain('notification');
   });
 
-  it('throws when no tool_use in response', async () => {
+  it('throws when no tool call in response', async () => {
     const mockCreate = vi.fn().mockResolvedValue({
-      content: [{ type: 'text', text: 'Sorry, I cannot help.' }],
+      choices: [{ message: { content: 'Sorry' } }],
     });
 
-    const mockClient = { messages: { create: mockCreate } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockOpenAI = { chat: { completions: { create: mockCreate } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
 
     await expect(client.analyzeIssue('test')).rejects.toThrow('tool_use');
   });
 
   it('exposes tool schema', () => {
-    const mockClient = { messages: { create: vi.fn() } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockOpenAI = { chat: { completions: { create: vi.fn() } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
     const schema = client.getToolSchema();
 
-    expect(schema.name).toBe('apply_ast_changes');
-    expect(schema.input_schema).toBeDefined();
+    expect(schema.function.name).toBe('apply_ast_changes');
+    expect(schema.function.parameters).toBeDefined();
   });
 });

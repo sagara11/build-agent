@@ -110,7 +110,7 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
   let diffs: FileDiff[] | undefined;
 
   if (!options.dryRun && findings.length > 0) {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) {
       throw new MissingApiKeyError();
     }
 
@@ -203,7 +203,7 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
   let diffs: FileDiff[] | undefined;
 
   if (!options.dryRun && findings.length > 0) {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) {
       throw new MissingApiKeyError();
     }
 
@@ -258,7 +258,7 @@ function severityOrder(severity: string): number {
 
 export class MissingApiKeyError extends Error {
   constructor() {
-    super('ANTHROPIC_API_KEY not set. Use --dry-run for free analysis without Claude suggestions.');
+    super('OPENROUTER_API_KEY not set. Use --dry-run for free analysis without LLM suggestions.');
     this.name = 'MissingApiKeyError';
   }
 }

@@ -5,26 +5,35 @@ import * as path from 'node:path';
 
 const FIXTURES = path.resolve(__dirname, '../fixtures/god-class-project');
 
+function mockOpenAIResponse(actions: any[], reasoning = 'test') {
+  return {
+    choices: [{
+      message: {
+        tool_calls: [{
+          id: 'call-1',
+          type: 'function',
+          function: {
+            name: 'apply_ast_changes',
+            arguments: JSON.stringify({ reasoning, actions }),
+          },
+        }],
+      },
+    }],
+  };
+}
+
 describe('RetryPipeline', () => {
   it('succeeds on first try when changes compile', async () => {
-    const mockCreate = vi.fn().mockResolvedValue({
-      content: [{
-        type: 'tool_use',
-        id: 'id',
-        name: 'apply_ast_changes',
-        input: {
-          reasoning: 'Rename for clarity',
-          actions: [{
-            action: 'rename_symbol',
-            sourceFile: 'database.ts',
-            oldName: 'Database',
-            newName: 'DatabaseClient',
-          }],
-        },
-      }],
-    });
-    const mockClient = { messages: { create: mockCreate } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockCreate = vi.fn().mockResolvedValue(
+      mockOpenAIResponse([{
+        action: 'rename_symbol',
+        sourceFile: 'database.ts',
+        oldName: 'Database',
+        newName: 'DatabaseClient',
+      }])
+    );
+    const mockOpenAI = { chat: { completions: { create: mockCreate } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
 
     const pipeline = new RetryPipeline(client, FIXTURES);
     const result = await pipeline.run('test prompt');
@@ -39,44 +48,24 @@ describe('RetryPipeline', () => {
     const mockCreate = vi.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
-        return Promise.resolve({
-          content: [{
-            type: 'tool_use',
-            id: 'id',
-            name: 'apply_ast_changes',
-            input: {
-              reasoning: 'Bad code',
-              actions: [{
-                action: 'replace_node',
-                sourceFile: 'database.ts',
-                startLine: 1,
-                endLine: 4,
-                newCode: 'const broken: = invalid syntax;',
-              }],
-            },
-          }],
-        });
+        return Promise.resolve(mockOpenAIResponse([{
+          action: 'replace_node',
+          sourceFile: 'database.ts',
+          startLine: 1,
+          endLine: 4,
+          newCode: 'const broken: = invalid syntax;',
+        }], 'Bad code'));
       }
-      return Promise.resolve({
-        content: [{
-          type: 'tool_use',
-          id: 'id2',
-          name: 'apply_ast_changes',
-          input: {
-            reasoning: 'Fixed',
-            actions: [{
-              action: 'rename_symbol',
-              sourceFile: 'database.ts',
-              oldName: 'Database',
-              newName: 'DB',
-            }],
-          },
-        }],
-      });
+      return Promise.resolve(mockOpenAIResponse([{
+        action: 'rename_symbol',
+        sourceFile: 'database.ts',
+        oldName: 'Database',
+        newName: 'DB',
+      }], 'Fixed'));
     });
 
-    const mockClient = { messages: { create: mockCreate } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockOpenAI = { chat: { completions: { create: mockCreate } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
 
     const pipeline = new RetryPipeline(client, FIXTURES);
     const result = await pipeline.run('test prompt');
@@ -85,26 +74,18 @@ describe('RetryPipeline', () => {
   });
 
   it('fails gracefully after max retries', async () => {
-    const mockCreate = vi.fn().mockResolvedValue({
-      content: [{
-        type: 'tool_use',
-        id: 'id',
-        name: 'apply_ast_changes',
-        input: {
-          reasoning: 'Always bad',
-          actions: [{
-            action: 'replace_node',
-            sourceFile: 'database.ts',
-            startLine: 1,
-            endLine: 4,
-            newCode: 'const broken: = invalid;',
-          }],
-        },
-      }],
-    });
+    const mockCreate = vi.fn().mockResolvedValue(
+      mockOpenAIResponse([{
+        action: 'replace_node',
+        sourceFile: 'database.ts',
+        startLine: 1,
+        endLine: 4,
+        newCode: 'const broken: = invalid;',
+      }], 'Always bad')
+    );
 
-    const mockClient = { messages: { create: mockCreate } } as any;
-    const client = new ClaudeClient(mockClient);
+    const mockOpenAI = { chat: { completions: { create: mockCreate } } } as any;
+    const client = new ClaudeClient(mockOpenAI);
 
     const pipeline = new RetryPipeline(client, FIXTURES);
     const result = await pipeline.run('test prompt');
