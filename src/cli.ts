@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import { runPipeline, MissingApiKeyError } from './pipeline/orchestrator.js';

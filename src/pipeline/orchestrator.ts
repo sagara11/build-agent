@@ -258,7 +258,7 @@ function severityOrder(severity: string): number {
 
 export class MissingApiKeyError extends Error {
   constructor() {
-    super('OPENROUTER_API_KEY not set. Use --dry-run for free analysis without LLM suggestions.');
+    super('OPENROUTER_API_KEY not set. Set it in .env file or env variable. Use --dry-run for free analysis without LLM.');
     this.name = 'MissingApiKeyError';
   }
 }
