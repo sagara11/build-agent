@@ -131,7 +131,7 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
     const projectDir = tsconfigPath ? path.dirname(tsconfigPath) : dir;
     const topFinding = findings.sort((a, b) => severityOrder(b.severity) - severityOrder(a.severity))[0];
     const sliced = sliceContext(topFinding, [targetSourceFile], symbolTable, dependencyGraph, fileMetrics);
-    const prompt = buildPrompt(sliced);
+    const prompt = await buildPrompt(sliced);
 
     const client = new ClaudeClient();
     const pipeline = new RetryPipeline(client, projectDir);
@@ -240,7 +240,7 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
     logStep('Sending top finding to LLM for refactoring suggestions');
     const topFinding = findings.sort((a, b) => severityOrder(b.severity) - severityOrder(a.severity))[0];
     const sliced = sliceContext(topFinding, sourceFiles, symbolTable, dependencyGraph, fileMetrics);
-    const prompt = buildPrompt(sliced);
+    const prompt = await buildPrompt(sliced);
 
     const client = new ClaudeClient();
     const pipeline = new RetryPipeline(client, resolvedPath);

@@ -3,7 +3,7 @@ import { buildPrompt } from '../../src/llm/prompt-builder.js';
 import { SlicedContext } from '../../src/slicer/context-slicer.js';
 
 describe('prompt-builder', () => {
-  it('builds prompt with all sections', () => {
+  it('builds prompt with all sections', async () => {
     const slicedContext: SlicedContext = {
       finding: {
         smellType: 'god-class',
@@ -21,7 +21,7 @@ describe('prompt-builder', () => {
       estimatedTokens: 200,
     };
 
-    const prompt = buildPrompt(slicedContext);
+    const prompt = await buildPrompt(slicedContext);
 
     expect(prompt).toContain('## Issue Summary');
     expect(prompt).toContain('god-class');
