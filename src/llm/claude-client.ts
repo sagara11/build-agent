@@ -70,7 +70,7 @@ export class ClaudeClient {
       throw new Error('No API key found. Set OPENROUTER_API_KEY env variable.');
     }
 
-    this.client = new OpenAI({ apiKey, baseURL });
+    this.client = new OpenAI({ apiKey, baseURL, fetch: globalThis.fetch });
   }
 
   async analyzeIssue(prompt: string): Promise<AstActionList> {
