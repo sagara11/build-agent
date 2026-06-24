@@ -19,6 +19,7 @@ import { ClaudeClient } from '../llm/claude-client.js';
 import { RetryPipeline } from '../llm/retry-pipeline.js';
 import { generateDiff, formatUnifiedDiff, FileDiff } from '../diff/diff-generator.js';
 import { DetectorContext } from '../detectors/base-detector.js';
+import { logStep, logDone, logHeader, logInfo, setLogEnabled } from './logger.js';
 import {
   Finding,
   FileMetrics,
@@ -52,6 +53,8 @@ export async function runPipeline(targetPath: string, options: PipelineOptions):
   const startTime = Date.now();
   const resolvedPath = path.resolve(targetPath);
 
+  setLogEnabled(options.format !== 'json');
+
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`Path does not exist: ${resolvedPath}`);
   }
@@ -70,6 +73,11 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
     throw new Error(`Unsupported file type: ${ext}. Supported: .ts, .tsx, .js, .jsx`);
   }
 
+  logHeader('🔍 Refactor Agent — Single File Analysis');
+  logInfo(`Target: ${filePath}`);
+  logInfo(`Mode: ${options.dryRun ? 'dry-run (no LLM)' : 'full (with LLM)'}`);
+
+  logStep('Parsing file');
   const dir = path.dirname(filePath);
   const tsconfigPath = findTsconfigUp(dir);
 
@@ -83,13 +91,17 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
     project = new Project({ compilerOptions: { strict: true } });
     project.addSourceFileAtPath(filePath);
   }
+  logDone('Parsed', tsconfigPath ? 'with tsconfig' : 'standalone');
 
+  logStep('Building symbol table & metrics');
   const sourceFiles = project.getSourceFiles();
   const targetSourceFile = project.getSourceFileOrThrow(filePath);
   const symbolTable = buildSymbolTable([targetSourceFile]);
   const dependencyGraph = buildDependencyGraph(sourceFiles);
   const fileMetrics = [calculateFileMetrics(targetSourceFile, dependencyGraph)];
+  logDone('Symbol table & metrics built');
 
+  logStep('Running detectors');
   const context: DetectorContext = {
     symbolTable,
     dependencyGraph,
@@ -105,6 +117,7 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
     ...detectDesignPatternOpportunities([targetSourceFile]),
     ...detectModernizationIssues([targetSourceFile]),
   ];
+  logDone('Detection complete', `${findings.length} findings`);
 
   let diff: string | undefined;
   let diffs: FileDiff[] | undefined;
@@ -114,6 +127,7 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
       throw new MissingApiKeyError();
     }
 
+    logStep('Sending to LLM for refactoring suggestions');
     const projectDir = tsconfigPath ? path.dirname(tsconfigPath) : dir;
     const topFinding = findings.sort((a, b) => severityOrder(b.severity) - severityOrder(a.severity))[0];
     const sliced = sliceContext(topFinding, [targetSourceFile], symbolTable, dependencyGraph, fileMetrics);
@@ -122,11 +136,14 @@ async function runSingleFilePipeline(filePath: string, options: PipelineOptions,
     const client = new ClaudeClient();
     const pipeline = new RetryPipeline(client, projectDir);
     const result = await pipeline.run(prompt);
+    logDone('LLM response received', `${result.attempts} attempt(s)`);
 
     if (result.success && result.sandboxPath) {
+      logStep('Generating diff');
       diffs = generateDiff(projectDir, result.sandboxPath);
       diff = formatUnifiedDiff(diffs);
       fs.rmSync(result.sandboxPath, { recursive: true, force: true });
+      logDone('Diff generated', `${diffs.length} file(s) changed`);
     }
   }
 
@@ -159,11 +176,19 @@ function findTsconfigUp(dir: string): string | null {
 }
 
 async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptions, startTime: number): Promise<PipelineOutput> {
+  logHeader('🔍 Refactor Agent — Directory Analysis');
+  logInfo(`Target: ${resolvedPath}`);
+  logInfo(`Mode: ${options.dryRun ? 'dry-run (no LLM)' : 'full (with LLM)'}`);
+
+  logStep('Indexing project files');
   const indexResult = await indexProject(resolvedPath);
   if (indexResult.files.length === 0) {
+    logDone('No source files found');
     return emptyOutput(startTime);
   }
+  logDone('Indexed', `${indexResult.files.length} files`);
 
+  logStep('Parsing AST');
   const tsconfigPath = path.join(resolvedPath, 'tsconfig.json');
   let project: Project;
   if (fs.existsSync(tsconfigPath)) {
@@ -175,12 +200,16 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
       project.addSourceFileAtPath(path.join(resolvedPath, f.filePath));
     }
   }
+  logDone('AST parsed');
 
+  logStep('Building symbol table & dependency graph');
   const sourceFiles = project.getSourceFiles();
   const symbolTable = buildSymbolTable(sourceFiles);
   const dependencyGraph = buildDependencyGraph(sourceFiles);
   const fileMetrics = sourceFiles.map(sf => calculateFileMetrics(sf, dependencyGraph));
+  logDone('Analysis complete');
 
+  logStep('Running detectors (smells, patterns, modernization)');
   const context: DetectorContext = {
     symbolTable,
     dependencyGraph,
@@ -198,6 +227,7 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
     ...detectDesignPatternOpportunities(sourceFiles),
     ...detectModernizationIssues(sourceFiles),
   ];
+  logDone('Detection complete', `${findings.length} findings`);
 
   let diff: string | undefined;
   let diffs: FileDiff[] | undefined;
@@ -207,6 +237,7 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
       throw new MissingApiKeyError();
     }
 
+    logStep('Sending top finding to LLM for refactoring suggestions');
     const topFinding = findings.sort((a, b) => severityOrder(b.severity) - severityOrder(a.severity))[0];
     const sliced = sliceContext(topFinding, sourceFiles, symbolTable, dependencyGraph, fileMetrics);
     const prompt = buildPrompt(sliced);
@@ -214,11 +245,14 @@ async function runDirectoryPipeline(resolvedPath: string, options: PipelineOptio
     const client = new ClaudeClient();
     const pipeline = new RetryPipeline(client, resolvedPath);
     const result = await pipeline.run(prompt);
+    logDone('LLM response received', `${result.attempts} attempt(s)`);
 
     if (result.success && result.sandboxPath) {
+      logStep('Generating diff');
       diffs = generateDiff(resolvedPath, result.sandboxPath);
       diff = formatUnifiedDiff(diffs);
       fs.rmSync(result.sandboxPath, { recursive: true, force: true });
+      logDone('Diff generated', `${diffs.length} file(s) changed`);
     }
   }
 
