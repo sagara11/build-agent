@@ -1,13 +1,12 @@
 import { SlicedContext } from '../slicer/context-slicer.js';
-import { querySmellDocs, queryPatternDocs, queryTriggerMatrix, disconnectMcp } from '../mcp/knowledge-client.js';
+import { retrieveContext } from '../rag/retriever.js';
+import { querySmellDocs, queryPatternDocs, disconnectMcp } from '../mcp/knowledge-client.js';
 import { logStep, logDone } from '../pipeline/logger.js';
 
 export async function buildPrompt(slicedContext: SlicedContext): Promise<string> {
   const { finding, sourceCode, dependencySignatures, metricsJson } = slicedContext;
 
-  logStep('Querying MCP knowledge server for relevant docs');
-  const knowledgeContext = await loadMcpContext(finding.smellType, finding.message);
-  logDone('Knowledge context loaded');
+  const knowledgeContext = await loadKnowledgeContext(finding.smellType, finding.message);
 
   return `## Issue Summary
 Type: ${finding.smellType}
@@ -35,11 +34,22 @@ Prefer extract_class for God Classes, extract_method for Long Methods, and repla
 Keep changes minimal and focused on the specific issue.`;
 }
 
-async function loadMcpContext(smellType: string, message: string): Promise<string> {
-  const sections: string[] = [];
+async function loadKnowledgeContext(smellType: string, message: string): Promise<string> {
+  const query = `${smellType} ${message}`;
 
+  if (process.env.DATABASE_URL) {
+    logStep('Retrieving context via RAG (pgvector)');
+    const ragContext = await retrieveContext(query);
+    if (ragContext) {
+      logDone('RAG context retrieved');
+      return ragContext;
+    }
+  }
+
+  logStep('Querying MCP knowledge server');
   try {
-    const smellDocs = await querySmellDocs(mapSmellType(smellType, message));
+    const sections: string[] = [];
+    const smellDocs = await querySmellDocs(mapSmellType(message));
     if (smellDocs) sections.push(smellDocs);
 
     const patternName = detectPatternFromMessage(message);
@@ -48,24 +58,23 @@ async function loadMcpContext(smellType: string, message: string): Promise<strin
       if (patternDocs) sections.push(patternDocs);
     }
 
-    const triggerMatrix = await queryTriggerMatrix();
-    if (triggerMatrix) sections.push(`\n### Pattern Trigger Matrix\n${triggerMatrix}`);
-
     await disconnectMcp();
-  } catch {
-    // MCP unavailable — continue without knowledge context
-  }
+    logDone('MCP context loaded');
 
-  if (sections.length === 0) return '';
-  return `\n## Reference Documentation (from Knowledge Base)\n${sections.join('\n\n---\n\n')}\n`;
+    if (sections.length === 0) return '';
+    return `\n## Reference Documentation\n${sections.join('\n\n---\n\n')}\n`;
+  } catch {
+    return '';
+  }
 }
 
-function mapSmellType(smellType: string, message: string): string {
-  if (message.toLowerCase().includes('god class')) return 'god-class';
-  if (message.toLowerCase().includes('too long')) return 'long-method';
-  if (message.toLowerCase().includes('complexity')) return 'high-complexity';
-  if (message.toLowerCase().includes('duplicat')) return 'duplicated-code';
-  return smellType;
+function mapSmellType(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes('god class')) return 'god-class';
+  if (lower.includes('too long')) return 'long-method';
+  if (lower.includes('complexity')) return 'high-complexity';
+  if (lower.includes('duplicat')) return 'duplicated-code';
+  return 'god-class';
 }
 
 function detectPatternFromMessage(message: string): string | null {
@@ -75,10 +84,6 @@ function detectPatternFromMessage(message: string): string | null {
   if (lower.includes('observer') || lower.includes('event bus')) return 'observer';
   if (lower.includes('builder')) return 'builder';
   if (lower.includes('facade')) return 'facade';
-  if (lower.includes('decorator')) return 'decorator';
-  if (lower.includes('command')) return 'command';
-  if (lower.includes('chain of responsibility')) return 'chain-of-responsibility';
-
   if (lower.includes('god class')) return 'facade';
   if (lower.includes('too long')) return 'strategy';
   return null;

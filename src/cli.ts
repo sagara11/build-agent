@@ -69,4 +69,19 @@ program
     }
   });
 
+program
+  .command('index-knowledge')
+  .description('Index knowledge-agent docs into pgvector for RAG retrieval')
+  .action(async () => {
+    try {
+      const { indexKnowledge } = await import('./rag/retriever.js');
+      const count = await indexKnowledge();
+      process.stderr.write(`\n✅ Indexed ${count} chunks into pgvector\n`);
+    } catch (e) {
+      process.stderr.write(`\nError: ${e instanceof Error ? e.message : String(e)}\n`);
+      process.stderr.write('Make sure DATABASE_URL is set and PostgreSQL with pgvector extension is running.\n');
+      process.exitCode = 1;
+    }
+  });
+
 program.parse();
